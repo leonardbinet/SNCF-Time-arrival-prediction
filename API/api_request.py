@@ -6,12 +6,10 @@ import os
 import json
 import requests
 import pandas as pd
-from configuration import USER
-
-# Parameters
 
 
 def compute_api_request(path, api_user):
+    print("LAUNCH REQUEST ON SNCF API FOR " + path)
     page = 0
     # init
 
@@ -33,7 +31,12 @@ def compute_api_request(path, api_user):
         except KeyError:
             print("No pagination")
             pagination = "nope_pagination"
-
+        try:
+            df_disruptions = pd.DataFrame(parsed["disruptions"])
+            print("Correctly imported disruptions")
+        except KeyError:
+            print("No disruptions")
+            df_disruptions = "nope_disruptions"
         try:
             df_links = pd.DataFrame(parsed["links"])
             print("Correctly imported links")
@@ -52,7 +55,8 @@ def compute_api_request(path, api_user):
             'keys': parsed.keys(),
             'pagination': pagination,
             'links': df_links,
-            'items': df_items
+            'items': df_items,
+            'disruptions': df_disruptions,
         }
         return result
 
@@ -65,6 +69,7 @@ def compute_api_request(path, api_user):
         "links": first["links"],
         "pagination": pd.DataFrame(first["pagination"], index=[0]),
         "items": first["items"],
+        "disruptions": first["disruptions"],
         "keys": first["keys"],  # list all keys present in first page
     }
     # find number of requests to make
@@ -74,18 +79,22 @@ def compute_api_request(path, api_user):
     # compute necessary queries
     for page in range(1, hundreds + 1):
         page_result = get_page(page)
+
         # append results
         final_result["items"] = pd.concat(
             [final_result["items"], page_result["items"]], ignore_index=True)
+        final_result["disruptions"] = pd.concat(
+            [final_result["disruptions"], page_result["disruptions"]], ignore_index=True)
         page_pagination = pd.DataFrame(page_result["pagination"], index=[page])
         final_result["pagination"] = pd.concat(
             [final_result["pagination"], page_pagination]
         )
+
+    # print results shape
     print("Imported pagination shape: \n", final_result["pagination"].shape)
     print("Imported links shape: \n", final_result["links"].shape)
+    print("Imported disruptions shape: \n", final_result["disruptions"].shape)
     print("Imported items shape: \n", final_result["items"].shape)
     print("Keys present in first page: ", final_result["keys"])
+
     return final_result
-
-
-result = compute_api_request("coverage/sncf/lines", USER)
