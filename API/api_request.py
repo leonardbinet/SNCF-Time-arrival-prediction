@@ -8,38 +8,43 @@ import requests
 import pandas as pd
 
 
-def compute_api_request(path, api_user):
-    print("LAUNCH REQUEST ON SNCF API FOR " + path)
-    page = 0
-    # init
+def compute_api_request(path, api_user, page_limit=10, debug=False):
+    print("LAUNCH REQUEST ON SNCF API FOR " +
+          path + " WITH LIMIT " + str(page_limit))
 
-    def get_page(page):
+    def get_page(page, count):
         print("Import on page " + str(page))
         base = "https://api.sncf.com/v1/"
         payload = {
             "start_page": page,
-            "count": 100,
+            "count": count,
         }
         url = os.path.join(base, path)
         r = requests.get(url=url, auth=(api_user, ""), params=payload)
         if r.status_code == 200:
             parsed = json.loads(r.text)
+        else:
+            print("Request failed " + r.status_code)
+            return r
 
         try:
             pagination = parsed["pagination"]
-            print("Correctly imported pagination")
+            if debug:
+                print("Correctly imported pagination")
         except KeyError:
             print("No pagination")
             pagination = "nope_pagination"
         try:
             df_disruptions = pd.DataFrame(parsed["disruptions"])
-            print("Correctly imported disruptions")
+            if debug:
+                print("Correctly imported disruptions")
         except KeyError:
             print("No disruptions")
             df_disruptions = "nope_disruptions"
         try:
             df_links = pd.DataFrame(parsed["links"])
-            print("Correctly imported links")
+            if debug:
+                print("Correctly imported links")
         except KeyError:
             print("No links")
             df_links = "nope_link"
@@ -47,7 +52,8 @@ def compute_api_request(path, api_user):
         try:
             last_el = url.rsplit('/', 1)[-1]
             df_items = pd.DataFrame(parsed[last_el])
-            print("Correctly imported " + last_el)
+            if debug:
+                print("Correctly imported " + last_el)
         except KeyError:
             print("No " + url.rsplit('/', 1)[-1])
             df_items = "nope_item"
@@ -61,7 +67,8 @@ def compute_api_request(path, api_user):
         return result
 
     # compute first with 100 lines
-    first = get_page(0)
+    nbr_per_page = 100
+    first = get_page(0, nbr_per_page)
 
     # initialize result dictionary
     # one dataframe
@@ -73,12 +80,18 @@ def compute_api_request(path, api_user):
         "keys": first["keys"],  # list all keys present in first page
     }
     # find number of requests to make
-    hundreds = first["pagination"][
-        "total_result"] // first["pagination"]["items_per_page"]
+    nbr_elements = first["pagination"][
+        "total_result"]
+    hundreds = nbr_elements // nbr_per_page
 
+    page_limit = min(page_limit, hundreds + 1)
+    print("-" * 50)
+    print("There are " + str(nbr_elements) + " elements with " +
+          str(nbr_per_page) + " elements per page. Limit is " + str(page_limit) + ".")
+    print("-" * 50)
     # compute necessary queries
-    for page in range(1, hundreds + 1):
-        page_result = get_page(page)
+    for page in range(1, page_limit):
+        page_result = get_page(page, nbr_per_page)
 
         # append results
         final_result["items"] = pd.concat(
@@ -90,11 +103,14 @@ def compute_api_request(path, api_user):
             [final_result["pagination"], page_pagination]
         )
 
-    # print results shape
+    # print results
+    print("-" * 50)
+    print("RESULTS")
     print("Imported pagination shape: \n", final_result["pagination"].shape)
     print("Imported links shape: \n", final_result["links"].shape)
     print("Imported disruptions shape: \n", final_result["disruptions"].shape)
     print("Imported items shape: \n", final_result["items"].shape)
     print("Keys present in first page: ", final_result["keys"])
+    print("-" * 50)
 
     return final_result

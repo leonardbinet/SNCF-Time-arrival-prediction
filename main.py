@@ -5,5 +5,5 @@ from configuration import USER
 # path = "coverage/sncf/lines"
 # path = "coverage/sncf/stop_points"
 
-path = "coverage/sncf/connections"
+path = "coverage/sncf/disruptions"
 result = compute_api_request(path, USER)
