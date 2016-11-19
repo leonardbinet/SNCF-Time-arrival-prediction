@@ -21,4 +21,3 @@ def get_secret(setting, mes_Secrets=secrets):
 
 # Keep this information secret
 USER = get_secret('USER')
-PASSWORD = get_secret('PASSWORD')
