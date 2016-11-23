@@ -58,7 +58,7 @@ def compute_api_request(path, api_user, page_limit=10, debug=False):
             print("No " + url.rsplit('/', 1)[-1])
             df_items = "nope_item"
         result = {
-            'keys': parsed.keys(),
+            'keys': list(parsed.keys()),
             'pagination': pagination,
             'links': df_links,
             'items': df_items,

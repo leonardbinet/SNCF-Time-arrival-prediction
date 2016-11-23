@@ -6,3 +6,13 @@ secret.json
 
 # my data folder => should not be saved on repo
 Data/*
+
+# CSV files or JSON files, Data shouldn't be saved on repo
+*.csv
+*.json
+
+# ipynb checkpoints
+.ipynb_checkpoints/*
+
+# ipython notebooks in general, for now
+*.ipynb
