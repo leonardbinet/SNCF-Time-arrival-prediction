@@ -1,3 +1,35 @@
+"""
+This module contains some useful functions.
+
+For now:
+ - flatten_columns
+ - flatten_dataframe
+"""
+import pandas as pd
+import numpy as np
+
+
+def length_with_nan(x):
+    if isinstance(x, list):
+        return len(x)
+    else:
+        return x
+
+
+def first_with_nan(x):
+    if isinstance(x, list):
+        return x[0]
+    else:
+        return x
+
+
+def keys_with_nan(x):
+    if isinstance(x, dict):
+        return str(list(x.keys()))
+    else:
+        return x
+
+
 def flatten_columns(df, columns_list, drop=False):
     """
     Goal: flatten a dataframe, which has columns filled with lists or dictionnaries.
@@ -10,51 +42,83 @@ def flatten_columns(df, columns_list, drop=False):
     Dataframe is changed in place, with new columns, and flattened columns deleted if drop=True.
     Returns added columns
     """
-    real_columns = df.columns
-    for column in columns_list:
-        if column not in real_columns:
-            print("Column " + column + " is not a real column in the dataframe.")
-            columns_list.remove(column)
+
+    # First, we check if asked columns are present
+    def check_asked_cols(df_to_check, cols_to_check):
+        real_columns = df_to_check.columns
+        for column in cols_to_check:
+            if column not in real_columns:
+                print("Column " + column +
+                      " is not a real column in the dataframe.")
+                cols_to_check.remove(column)
+        return cols_to_check
+
+    columns_list = check_asked_cols(df, columns_list)
+
+    # Instanciate list of created columns during process
     added_columns = []
     for column_flattened in columns_list:
         print("-" * 20)
         print("FLATTENING " + column_flattened.capitalize())
-        # find out whether the value is a dict
+
+        # Find out whether the value is a dict
+        # TODO check on whole column
         if isinstance(df[column_flattened][0], dict):
-            # we find keys on the dictionnary
-            keys_to_flatten = list(df[column_flattened][0].keys())
-            # we assume that they are the same on all rows
-            # TODO we could check it
-            for key in keys_to_flatten:
-                df[column_flattened + "_" +
-                    key] = df[column_flattened].apply(lambda x: x[key])
-                added_columns.append(column_flattened + "_" + key)
-                print("Created column : " + column_flattened + "_" + key)
-            if drop:
-                df.drop(column_flattened, axis=1, inplace=True)
-                print("Removed original " + column_flattened)
-        # we check if it is a list
+
+            # Lets check if keys are all the same:
+            # First we find keys on the dictionnary
+            series_keylists = df[column_flattened].apply(keys_with_nan)
+            # We count occurences of unique lists of keys
+            keylists_counts = series_keylists.value_counts()
+
+            # If there is always the same key we can flatten
+            if len(keylists_counts) == 1:
+                print("This columns has dicts of same keys. Ok to flatten.")
+                keys_to_flatten = list(df[column_flattened][0].keys())
+                for key in keys_to_flatten:
+
+                    def key_with_nan(x):
+                        try:
+                            return x[key]
+                        except:
+                            return x
+
+                    df[column_flattened + "_" +
+                        key] = df[column_flattened].apply(key_with_nan)
+                    added_columns.append(column_flattened + "_" + key)
+                    print("Created column : " + column_flattened + "_" + key)
+                if drop:
+                    df.drop(column_flattened, axis=1, inplace=True)
+                    print("Removed original " + column_flattened)
+            else:
+                print("Keys are not the same on all rows.")
+                print(keylists_counts)
+
+        # Find out whether the value is a list
+        # TODO check on whole column
         elif isinstance(df[column_flattened][0], list):
             print("Column " + column_flattened + " is a list.")
             # check if all of same size
-            diff_sizes = df[column_flattened].apply(
-                lambda x: len(x)).value_counts().index.values
-            print("Counts of different sizes: ", diff_sizes)
+
+            series_sizes = df[column_flattened].apply(length_with_nan)
+
+            sizes_counts = series_sizes.value_counts()
+            print("Counts of different sizes: ", len(sizes_counts))
             # if all of same size
-            if len(diff_sizes) == 1:
-                print("All of same size: " + str(diff_sizes[0]))
+            if len(sizes_counts) == 1:
+                print("All of same size: " + str(sizes_counts))
                 # and if size is one: we can flatten list [x] -> x
-                if diff_sizes == 1:
+                if series_sizes[0] == 1:
                     print("All lists are from size one, so we can take flatten it.")
                     df[column_flattened] = df[
-                        column_flattened].apply(lambda x: x[0])
+                        column_flattened].apply(first_with_nan)
                     added_columns.append(column_flattened)
                     print("Replaced column " + column_flattened)
             else:
                 print(
                     "Size are not the same or >1 so we cannot flatten list, but we can count the number of elements.")
                 df[column_flattened +
-                    "_size"] = df[column_flattened].apply(lambda x: len(x))
+                    "_size"] = df[column_flattened].apply(length_with_nan)
                 added_columns.append(column_flattened + "_size")
                 print("New column: " + column_flattened + "_size")
         else:

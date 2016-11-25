@@ -1,5 +1,5 @@
 """
-This module compute API requests.
+This module computes API requests.
 """
 
 import os
@@ -24,8 +24,13 @@ def compute_api_request(path, api_user, page_limit=10, debug=False):
         if r.status_code == 200:
             parsed = json.loads(r.text)
         else:
-            print("Request failed " + r.status_code)
-            return r
+            print("Request failed " + str(r.status_code))
+            result = {
+                "request": r,
+                "scrap": False,
+                "items": pd.DataFrame()
+            }
+            return result
 
         try:
             pagination = parsed["pagination"]
@@ -63,13 +68,16 @@ def compute_api_request(path, api_user, page_limit=10, debug=False):
             'links': df_links,
             'items': df_items,
             'disruptions': df_disruptions,
+            'scrap': True
         }
         return result
 
     # compute first with 100 lines
     nbr_per_page = 100
     first = get_page(0, nbr_per_page)
-
+    if not first["scrap"]:
+        print("Scrap failed.")
+        return first
     # initialize result dictionary
     # one dataframe
     final_result = {
