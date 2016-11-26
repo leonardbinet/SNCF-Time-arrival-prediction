@@ -16,3 +16,6 @@ Data/*
 
 # ipython notebooks in general, for now
 *.ipynb
+
+# PDF: documentation API
+*.pdf

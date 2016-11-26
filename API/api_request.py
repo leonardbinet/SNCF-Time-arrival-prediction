@@ -7,118 +7,135 @@ import json
 import requests
 import pandas as pd
 
+from multiprocessing import Pool
+from API.utils import flattenjson, flatten_columns, flatten_dataframe
 
-def compute_api_request(path, api_user, page_limit=10, debug=False):
-    print("LAUNCH REQUEST ON SNCF API FOR " +
-          path + " WITH LIMIT " + str(page_limit))
+# http://www.rueckstiess.net/research/snippets/show/ca1d7d90
 
-    def get_page(page, count):
-        print("Import on page " + str(page))
-        base = "https://api.sncf.com/v1/"
+
+def unwrap_self_f(arg, **kwarg):
+    return ApiRequest.compute_request_page(*arg, **kwarg)
+
+
+class ApiRequest:
+
+    def __init__(self, user, path):
+        self.core_path = "https://api.sncf.com/v1/"
+        self.user = user
+        self.path = os.path.join(self.core_path, path)
+        # Here are stored all requests results
+        self.results = {}
+        self.parsed_results = {}
+        self.first_request_status = False
+        self.total_result = False
+        print("Computing API request for " + self.path)
+
+    def compute_request_page(self, page=0, debug=False, count=100):
+        if debug:
+            print("Import on page " + str(page))
+        # Parameters of request
         payload = {
             "start_page": page,
             "count": count,
         }
-        url = os.path.join(base, path)
-        r = requests.get(url=url, auth=(api_user, ""), params=payload)
-        if r.status_code == 200:
-            parsed = json.loads(r.text)
-        else:
-            print("Request failed " + str(r.status_code))
-            result = {
-                "request": r,
-                "scrap": False,
-                "items": pd.DataFrame()
-            }
-            return result
+        # Compute request
+        request_result = requests.get(
+            url=self.path, auth=(self.user, ""), params=payload)
+        # Save result
+        self.results[page] = request_result
+        # Save result success, and number of results, for first page.
+        if request_result.status_code == 200 and page == 0:
+            self.first_request_status = True
+            self.extract_nbr_results()
 
-        try:
-            pagination = parsed["pagination"]
-            if debug:
-                print("Correctly imported pagination")
-        except KeyError:
-            print("No pagination")
-            pagination = "nope_pagination"
-        try:
-            df_disruptions = pd.DataFrame(parsed["disruptions"])
-            if debug:
-                print("Correctly imported disruptions")
-        except KeyError:
-            print("No disruptions")
-            df_disruptions = "nope_disruptions"
-        try:
-            df_links = pd.DataFrame(parsed["links"])
-            if debug:
-                print("Correctly imported links")
-        except KeyError:
-            print("No links")
-            df_links = "nope_link"
+    def extract_nbr_results(self):
+        if not self.first_request_status:
+            print("Cannot extract, because no successful request.")
+        # Parse first request answer.
+        parsed = json.loads(self.results[0].text)
+        # Extract pagination part.
+        pagination = parsed["pagination"]
+        # Extract total_result
+        self.total_result = pagination["total_result"]
 
-        try:
-            last_el = url.rsplit('/', 1)[-1]
-            df_items = pd.DataFrame(parsed[last_el])
-            if debug:
-                print("Correctly imported " + last_el)
-        except KeyError:
-            print("No " + url.rsplit('/', 1)[-1])
-            df_items = "nope_item"
-        result = {
-            'keys': list(parsed.keys()),
-            'pagination': pagination,
-            'links': df_links,
-            'items': df_items,
-            'disruptions': df_disruptions,
-            'scrap': True
-        }
-        return result
+    def compute_request_pages(self, page_limit=10, debug=False, count=100):
+        # Compute first with 100 lines
+        self.compute_request_page(0, count)
+        if not self.total_result and not self.first_request_status:
+            print("Fail, cound not successfully compute first request.")
+        # Find number of requests to make
+        blocs = self.total_result // count
+        page_limit = min(page_limit, blocs + 1)
+        if debug:
+            print("-" * 50)
+            print("There are " + str(self.total_result) + " elements with " +
+                  str(count) + " elements per page. Limit is " + str(page_limit) + ".")
+            print("-" * 50)
+        # Compute necessary queries
+        # Here multiprocessing
+        pages = range(1, page_limit)
+        pool = Pool(processes=10)
+        pool.map(unwrap_self_f, zip(
+            [self] * len(pages), pages, [debug] * len(pages), [count] * len(pages)))
 
-    # compute first with 100 lines
-    nbr_per_page = 100
-    first = get_page(0, nbr_per_page)
-    if not first["scrap"]:
-        print("Scrap failed.")
-        return first
-    # initialize result dictionary
-    # one dataframe
-    final_result = {
-        "links": first["links"],
-        "pagination": pd.DataFrame(first["pagination"], index=[0]),
-        "items": first["items"],
-        "disruptions": first["disruptions"],
-        "keys": first["keys"],  # list all keys present in first page
-    }
-    # find number of requests to make
-    nbr_elements = first["pagination"][
-        "total_result"]
-    hundreds = nbr_elements // nbr_per_page
+        # for page in range(1, page_limit):
+        #    self.compute_request_page(page, debug=debug, count=count)
 
-    page_limit = min(page_limit, hundreds + 1)
-    print("-" * 50)
-    print("There are " + str(nbr_elements) + " elements with " +
-          str(nbr_per_page) + " elements per page. Limit is " + str(page_limit) + ".")
-    print("-" * 50)
-    # compute necessary queries
-    for page in range(1, page_limit):
-        page_result = get_page(page, nbr_per_page)
+    def explain(self):
+        print("Détail des résultats")
+        # TODO
 
-        # append results
-        final_result["items"] = pd.concat(
-            [final_result["items"], page_result["items"]], ignore_index=True)
-        final_result["disruptions"] = pd.concat(
-            [final_result["disruptions"], page_result["disruptions"]], ignore_index=True)
-        page_pagination = pd.DataFrame(page_result["pagination"], index=[page])
-        final_result["pagination"] = pd.concat(
-            [final_result["pagination"], page_pagination]
-        )
 
-    # print results
-    print("-" * 50)
-    print("RESULTS")
-    print("Imported pagination shape: \n", final_result["pagination"].shape)
-    print("Imported links shape: \n", final_result["links"].shape)
-    print("Imported disruptions shape: \n", final_result["disruptions"].shape)
-    print("Imported items shape: \n", final_result["items"].shape)
-    print("Keys present in first page: ", final_result["keys"])
-    print("-" * 50)
+class RequestParser:
 
-    return final_result
+    def __init__(self, request_results, asked_path):
+        self.asked_path = asked_path
+        self.results = request_results
+        self.item_name = os.path.basename(asked_path)
+        self.parsed = {}  # dictionary of page : dictionary
+        self.nested_items = None  # will be a dict
+        self.unnested_items = None  # will be a dict
+        self.links = []  # first page is enough
+        self.disruptions = []  # append all
+        self.keys = []  # collect keys found in request answer
+
+    def set_results(self, request_results):
+        self.results = request_results
+
+    def parse(self):
+        self.parse_requests()
+        self.extract_keys()
+        self.get_nested_items()
+        self.get_unnested_items()
+
+    def parse_requests(self):
+        # First operation, to parse requests text into python dictionnaries
+        for page, value in self.results.items():
+            self.parsed[page] = json.loads(value.text)
+
+    def get_nested_items(self):
+        """
+        Result is a dictionary, of one key: item_name, and value is list of items (concatenate all result pages).
+        """
+        dictionnary = {self.item_name: []}
+        for page, value in self.parsed.items():
+            # concatenate two lists of items
+            dictionnary[self.item_name] += value[self.item_name]
+        self.nested_items = dictionnary
+
+    def get_unnested_items(self):
+        df = pd.DataFrame(self.nested_items[self.item_name])
+        flatten_dataframe(df, drop=True, max_depth=5)
+        self.unnested_items = df.to_dict()
+
+    def extract_keys(self):
+        self.keys = list(self.parsed.keys())
+
+    def extract_disruptions_list(self):
+        pass
+
+    def explain(self):
+        print("PARSING OF " + self.asked_path)
+        print("Keys found: " + str(self.keys))
+        print(self.item_name.capitalize() + " has " +
+              str(len(self.unnested_items)) + " elements.")
