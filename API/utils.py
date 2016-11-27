@@ -9,6 +9,17 @@ import pandas as pd
 import numpy as np
 
 
+def important_print(message, level=0):
+    if level == 1:
+        print("-" * 70)
+        print(message.capitalize())
+        print("-" * 70)
+    if level == 0:
+        print("-" * 50)
+        print(message)
+        print("-" * 50)
+
+
 def flattenjson(b, delim):
     val = {}
     if isinstance(b, dict):

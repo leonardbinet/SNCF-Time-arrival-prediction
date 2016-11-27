@@ -1,15 +1,10 @@
 #!/usr/bin/python3
 import os
-import pandas as pd
-import json
 
 from API.api_request import ApiRequest, RequestParser
-from API.utils import flatten_columns, flatten_dataframe, flattenjson
 from configuration import USER
 
-# EXAMPLE
-# possible requests
-# api_path = "coverage/sncf/lines"
+# All main requests (missing some)
 api_paths_list = [
     'coverage/sncf/addresses',
     'coverage/sncf/contributors',
@@ -49,20 +44,19 @@ def etl_sncf(api_paths, page_limit=100, count=100, debug=False):
         request.compute_request_pages(
             page_limit=page_limit, debug=debug, count=count)
         print(request.total_result)
+        # Write request log
+        request.write_log(directory)
         if not request.first_request_status:
+            # If first request failed, no parsing, go to next element
+            request.write_log(directory)
             continue
         # Parse results if sucessful
         parser = RequestParser(request.results, requested_path)
         parser.parse()
+        # Print some information
         parser.explain()
-        # Get results
-        unnested = pd.DataFrame(parser.unnested_items)  # df
-        nested = parser.nested_items  # dict
-        # Write results
-        # Write csv
-        unnested.to_csv(os.path.join(directory, parser.item_name + ".csv"))
-        # Write json
-        with open(os.path.join(directory, parser.item_name + ".json"), 'w') as f:
-            json.dump(nested, f, ensure_ascii=False)
+        # Write it on disk
+        parser.write_all(directory)
 
-etl_sncf(api_paths_list, page_limit=1000, count=100, debug=True)
+
+etl_sncf(api_paths_list[14:], page_limit=1000, count=300, debug=True)
